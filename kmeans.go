@@ -30,6 +30,8 @@ const (
 	ArgumentNoCropping
 	// ArgumentLAB (experimental, it seems to be buggy in some cases): uses LAB instead of RGB when measuring distance
 	ArgumentLAB
+
+	ArgumentCIEDE2000
 	// ArgumentDebugImage saves a tmp file in /tmp/ where the area that has been cut away by the mask is marked pink
 	// useful when figuring out what values to pick for the masks
 	ArgumentDebugImage
@@ -326,6 +328,9 @@ func findClosest(arguments int, c ColorItem, centroids []ColorItem) int {
 
 // distance returns the distance between two colors
 func distance(arguments int, c ColorItem, p ColorItem) float64 {
+	if IsBitSet(arguments, ArgumentCIEDE2000) {
+		return distanceCIEDE2000(c, p)
+	}
 	if IsBitSet(arguments, ArgumentLAB) {
 		return distanceLAB(c, p)
 	}
@@ -350,6 +355,26 @@ func distanceLAB(c ColorItem, p ColorItem) float64 {
 	}
 
 	return a.DistanceLab(b)
+}
+
+func distanceCIEDE2000(c ColorItem, p ColorItem) float64 {
+	errmsg := "Warning: CIEDE2000 failed, fallback to RGB"
+
+	a, err := colorful.Hex("#" + c.AsString())
+	if err != nil {
+		log.Fatal(err)
+		log.Println(errmsg)
+		return distanceRGB(c, p)
+	}
+
+	b, err2 := colorful.Hex("#" + p.AsString())
+	if err2 != nil {
+		log.Fatal(err2)
+		log.Println(errmsg)
+		return distanceRGB(c, p)
+	}
+
+	return a.DistanceCIEDE2000(b)
 }
 
 func distanceRGB(c ColorItem, p ColorItem) float64 {

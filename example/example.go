@@ -3,13 +3,17 @@ package main
 import (
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/jpeg"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"strings"
+	"sync"
 
-	prominentcolor ".."
+	prominentcolor "github.com/cjkgg/prominentcolor"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 func loadImage(fileInput string) (image.Image, error) {
@@ -27,11 +31,63 @@ func loadImage(fileInput string) (image.Image, error) {
 	return img, nil
 }
 
+type ColorSvs struct {
+	Colors []colorful.Color
+	once   sync.Once
+}
+
+var ColorServ *ColorSvs = &ColorSvs{}
+
+func (c *ColorSvs) Start() {
+	var step = 32
+	for r := 0; r < 255; r += step {
+		for g := 0; g < 255; g += step {
+			for b := 0; b < 255; b += step {
+				cl, _ := colorful.MakeColor(color.RGBA{
+					R: uint8(r),
+					G: uint8(g),
+					B: uint8(b),
+					A: 255,
+				})
+				c.Colors = append(c.Colors, cl)
+			}
+		}
+	}
+	fmt.Println(len(c.Colors))
+}
+
+func (c *ColorSvs) GetMainColor(mainc color.Color) (string, float64) {
+	c.once.Do(c.Start)
+	minDis := math.MaxFloat64
+	var cl colorful.Color
+	cr, _ := colorful.MakeColor(mainc)
+	for _, v := range c.Colors {
+		dis := v.DistanceCIEDE2000(cr)
+		if dis < minDis {
+			minDis = dis
+			cl = v
+		}
+	}
+	return cl.Hex(), minDis
+}
+
 func outputColorRange(colorRange []prominentcolor.ColorItem) string {
 	var buff strings.Builder
 	buff.WriteString("<table><tr>")
 	for _, color := range colorRange {
 		buff.WriteString(fmt.Sprintf("<td style=\"background-color: #%s;width:200px;height:50px;text-align:center;\">#%s %d</td>", color.AsString(), color.AsString(), color.Cnt))
+	}
+	buff.WriteString("</tr></table>")
+	buff.WriteString("<table><tr>")
+	for _, c := range colorRange {
+		scor, _ := colorful.MakeColor(color.RGBA{
+			R: uint8(c.Color.R),
+			G: uint8(c.Color.G),
+			B: uint8(c.Color.B),
+			A: 255,
+		})
+		lk, dis := ColorServ.GetMainColor(scor)
+		buff.WriteString(fmt.Sprintf("<td style=\"background-color: %s;width:200px;height:50px;text-align:center;\">%s %.2f</td>", lk, lk, dis))
 	}
 	buff.WriteString("</tr></table>")
 	return buff.String()
@@ -78,6 +134,8 @@ func bitInfo(bits int) string {
 	// LAB or RGB
 	if prominentcolor.IsBitSet(bits, prominentcolor.ArgumentLAB) {
 		list = append(list, "LAB")
+	} else if prominentcolor.IsBitSet(bits, prominentcolor.ArgumentCIEDE2000) {
+		list = append(list, "ciede")
 	} else {
 		list = append(list, "RGB")
 	}
@@ -112,7 +170,7 @@ func main() {
 		}
 		// Define the differents sets of params
 		kk := []int{
-			prominentcolor.ArgumentAverageMean | prominentcolor.ArgumentNoCropping,
+			prominentcolor.ArgumentAverageMean | prominentcolor.ArgumentNoCropping | prominentcolor.ArgumentCIEDE2000,
 			prominentcolor.ArgumentNoCropping,
 			prominentcolor.ArgumentDefault,
 		}
